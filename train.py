@@ -97,6 +97,7 @@ def main():
     criterion = torch.nn.MSELoss().cuda()
 
     lr = LEARNING_RATE
+    best_loss = 1000000
     for epoch in range(EPOCHS):
         optimizer = torch.optim.Adam(model.parameters(), lr=lr)
         train_loss = 0
@@ -162,13 +163,14 @@ def main():
             loss.backward()
             optimizer.step()
 
-            train_count += BATCH_SIZE
+            
             if idx_train % 500 == 0:
                 print('Batch[{0}/{1}] [Loss]: {2}'.format(train_count, train_total, train_loss/train_count))
                 output_heatmap = output[0][0].data.squeeze().cpu().numpy().astype(np.float32)
                 output_heatmap /= np.max(output_heatmap)
                 plot.imsave('output/T{}.png'.format(train_count), output_heatmap, cmap="viridis")
             
+            train_count += BATCH_SIZE
         
         #### Validation Mode
         model.eval()
@@ -210,14 +212,15 @@ def main():
                 
                 val_loss += loss.data.cpu().numpy()
                 
-                val_count += image.size(0)
+                
                 if idx_val % 500 == 0:
                     print('Batch[{0}/{1}] [Loss]: {2}'.format(val_count, val_total, val_loss/val_count))
                     output_heatmap = output[0][0].data.squeeze().cpu().numpy().astype(np.float32)
                     output_heatmap /= np.max(output_heatmap)
                     plot.imsave('output/V{}.png'.format(val_count), output_heatmap, cmap="viridis")
 
-            #print(output.shape)
+                val_count += BATCH_SIZE
+
 
         #### Print Epoch Log
         writer.add_scalar('train_loss', train_loss/train_count, epoch+1)
@@ -231,57 +234,14 @@ def main():
         
 
         #### Save Checkpoint
-        torch.save({
-            'epoch': start_epoch + epoch + 1,
-            'state_dict': model.state_dict(),
-            'optimizer': optimizer.state_dict(),
-        }, 'checkpoint.pth.tar')
+        if val_loss/val_count < best_loss:
+            torch.save({
+                'epoch': start_epoch + epoch + 1,
+                'state_dict': model.state_dict(),
+                'optimizer': optimizer.state_dict(),
+            }, 'checkpoint.pth.tar')
 
-
-
-    #### ---------------Below is testing------------- ####
-
-
-    #### Loading training data
-    train_data = datasets.ImageFolder('./features', transform=transforms.Compose([
-            #transforms.Resize(256),
-            #transforms.CenterCrop(224),
-            transforms.ToTensor()
-    ]))
-
-    train_loader = torch.utils.data.DataLoader(train_data, batch_size=2, shuffle=True)                                    
-    print(len(train_loader))
-    
-    
-
-
-    #### Construct Net
-    resnet50 = models.resnet50(pretrained = True)
-    #resnet50_feature_extractor.fc = nn.Linear(2048, 2048)
-    #print(*list(resnet50.children()))
-    resnet50_feature_extractor = nn.Sequential(*list(resnet50.children())[:-2])
-    #torch.nn.init.eye_(resnet50_feature_extractor.fc.weight)
-    for param in resnet50_feature_extractor.parameters():
-        param.requires_grad = False   
-        
-    use_gpu = torch.cuda.is_available()
-    #print(use_gpu)
-    
-    #### Inference
-    for i_batch, input in enumerate(train_loader):
-        #print(i_batch, input[0].dtype, input[0].shape)
-        #print(input[1])
-        saved_path = os.path.join(features_dir, str(i_batch)+'.txt')
-
-        x = Variable(input[0], requires_grad=False)
-        if use_gpu:
-            x = x.cuda()
-            resnet50_feature_extractor = resnet50_feature_extractor.cuda()
-        y = resnet50_feature_extractor(x).cpu()
-        #print(y.dtype)
-        y = y.data.numpy()
-        #print(y.shape)
-        #np.savetxt(saved_path, y, delimiter=',')
+    print("Training End")
 
 
 
