@@ -32,12 +32,12 @@ test_txt_path = './data/test.txt'
 data_dir = './data/panoptic'
 joint_dir = './data/2d_joints'
 
-BATCH_SIZE = 14
+BATCH_SIZE = 35
 LEARNING_RATE = 0.00001
 EPOCHS = 100
 RESUME_FROM_FILE = False
 IMG_WIDTH, IMG_HEIGHT = 1920, 1080
-
+PRINT_FREQ = 50
 
 def main():
     data_load_time = AverageMeter()
@@ -72,7 +72,7 @@ def main():
     #model_no_parallel = Arc(BATCH_SIZE)
     model_no_parallel = Arc2(output_size=(216, 384), in_channels=3, pretrained=True)
     #model = ArcNet(config, is_train=True)
-    model = DataParallel(model_no_parallel, chunk_sizes=[6,8])
+    model = DataParallel(model_no_parallel, chunk_sizes=[16,19])
     model = model.cuda()
 
     #### Load Model from Checkpoint
@@ -98,6 +98,8 @@ def main():
 
     lr = LEARNING_RATE
     best_loss = 1000000
+    train_iter = 0
+    valid_iter = 0
     for epoch in range(EPOCHS):
         optimizer = torch.optim.Adam(model.parameters(), lr=lr)
         train_loss = 0
@@ -164,13 +166,16 @@ def main():
             optimizer.step()
 
             
-            if idx_train % 500 == 0:
-                print('Batch[{0}/{1}] [Loss]: {2}'.format(train_count, train_total, train_loss/train_count))
+            if (idx_train+1) % PRINT_FREQ == 0:
+                print('Batch[{0}/{1}] [Loss]: {2}'.format((idx_train+1)*BATCH_SIZE, train_total, train_loss/train_count))
+                writer.add_scalar('train_loss', train_loss/train_count, train_iter)
                 output_heatmap = output[0][0].data.squeeze().cpu().numpy().astype(np.float32)
                 output_heatmap /= np.max(output_heatmap)
                 plot.imsave('output/T{}.png'.format(train_count), output_heatmap, cmap="viridis")
             
             train_count += BATCH_SIZE
+            train_iter += BATCH_SIZE
+            
         
         #### Validation Mode
         model.eval()
@@ -208,23 +213,26 @@ def main():
                 #loss = criterion(predicted, lossTarget)
                 #loss = Variable(loss, requires_grad=True)
 
-                loss = criterion(output, target_heatmap)
+                loss = criterion(output, target_heatmap_var)
                 
                 val_loss += loss.data.cpu().numpy()
                 
                 
-                if idx_val % 500 == 0:
-                    print('Batch[{0}/{1}] [Loss]: {2}'.format(val_count, val_total, val_loss/val_count))
+                if (idx_val+1) % PRINT_FREQ == 0:
+                    print('Batch[{0}/{1}] [Loss]: {2}'.format((idx_val+1)*BATCH_SIZE, val_total, val_loss/val_count))
+                    writer.add_scalar('val_loss', val_loss/val_count, val_iter)
                     output_heatmap = output[0][0].data.squeeze().cpu().numpy().astype(np.float32)
                     output_heatmap /= np.max(output_heatmap)
                     plot.imsave('output/V{}.png'.format(val_count), output_heatmap, cmap="viridis")
 
                 val_count += BATCH_SIZE
+                val_iter += BATCH_SIZE
+                
 
 
         #### Print Epoch Log
-        writer.add_scalar('train_loss', train_loss/train_count, epoch+1)
-        writer.add_scalar('val_loss', val_loss/val_count, epoch+1)
+        writer.add_scalar('train_loss', train_loss/train_count, train_iter)
+        writer.add_scalar('val_loss', val_loss/val_count, val_iter)
         print("Epoch[{0}] [Train Loss]: {1} [Val Loss]: {2}".format(epoch+1, train_loss/train_count, val_loss/val_count))
         
 
