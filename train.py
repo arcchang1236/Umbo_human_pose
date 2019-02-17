@@ -23,9 +23,6 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plot
 
 
-features_dir = './features'
-#shutil.copytree(data_dir, os.path.join(features_dir, data_dir[2:]))
-
 train_txt_path = './data/train.txt'
 val_txt_path = './data/val.txt'
 test_txt_path = './data/test.txt'
@@ -71,7 +68,6 @@ def main():
     #### Initialize Model
     #model_no_parallel = Arc(BATCH_SIZE)
     model_no_parallel = Arc2(output_size=(216, 384), in_channels=3, pretrained=True)
-    #model = ArcNet(config, is_train=True)
     model = DataParallel(model_no_parallel, chunk_sizes=[16,19])
     model = model.cuda()
 
@@ -99,7 +95,7 @@ def main():
     lr = LEARNING_RATE
     best_loss = 1000000
     train_iter = 0
-    valid_iter = 0
+    val_iter = 0
     for epoch in range(EPOCHS):
         optimizer = torch.optim.Adam(model.parameters(), lr=lr)
         train_loss = 0
@@ -124,36 +120,12 @@ def main():
             if joint.size(1) == 0 or target.size(1) == 0:
                 continue
             
-            #print(joint, target)
-            #print(image.shape, joint.shape, target.shape)
-            
-            
             dtype = torch.cuda.FloatTensor
             image_var = Variable(image.type(dtype))
             joint_var = Variable(joint.type(dtype))
             target_heatmap_var = Variable(target_heatmap.type(dtype))
 
             output = model(image_var)
-            
-            # predicted = []
-            # total_joints = joint.size(1)*joint.size(2)
-            # joint_t = joint.view(-1, total_joints, joint.size(3))
-            # output_np = output[0].data.squeeze().cpu().numpy().astype(np.float32)
-            # for bs in range(BATCH_SIZE):
-            #     for js in range(total_joints):
-            #         x = joint_t.numpy().astype(int)[bs][js][0]
-            #         y = joint_t.numpy().astype(int)[bs][js][1]
-            #         if x < 0 or x >= IMG_WIDTH or y < 0 or y >= IMG_HEIGHT:
-            #             predicted.append(0)
-            #             continue
-            #         predicted.append(output_np[y][x])
-            
-            # predicted = torch.from_numpy(np.array(predicted)).float()
-            
-            # t1, t2, t3, t4 = target.size()
-            # lossTarget = target.view(t1*t2*t3, t4)[:,-1].float()
-            #loss = criterion(predicted, lossTarget)
-            #loss = Variable(loss, requires_grad=True)
 
             loss = criterion(output, target_heatmap_var)
 
@@ -192,26 +164,6 @@ def main():
 
                 output = model(image_var)
                 #print(output.shape)
-
-                # predicted = []
-                # total_joints = joint.size(1)*joint.size(2)
-                # joint_t = joint.view(-1, total_joints, joint.size(3))
-                # output_np = output[0].data.squeeze().cpu().numpy().astype(np.float32)
-                # for bs in range(BATCH_SIZE):
-                #     for js in range(total_joints):
-                #         x = joint_t.numpy().astype(int)[bs][js][0]
-                #         y = joint_t.numpy().astype(int)[bs][js][1]
-                #         if x < 0 or x >= IMG_WIDTH or y < 0 or y >= IMG_HEIGHT:
-                #             predicted.append(0)
-                #             continue
-                #         predicted.append(output_np[y][x])
-                
-                # predicted = torch.from_numpy(np.array(predicted)).float()
-                
-                # t1, t2, t3, t4 = target.size()
-                # lossTarget = target.view(t1*t2*t3, t4)[:,-1].float()
-                #loss = criterion(predicted, lossTarget)
-                #loss = Variable(loss, requires_grad=True)
 
                 loss = criterion(output, target_heatmap_var)
                 
