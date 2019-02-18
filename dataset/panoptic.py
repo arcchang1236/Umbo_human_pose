@@ -128,8 +128,8 @@ class PanopticDataset(data.Dataset):
 
         
       joint = np.array(joint) * 216/1080
-      EXTRA_BODIES = 3 - nj
-      if EXTRA_BODIES == 3:
+      EXTRA_BODIES = 7 - nj
+      if EXTRA_BODIES == 7:
          joint = np.zeros((EXTRA_BODIES, 19, 2))
       elif EXTRA_BODIES != 0:
          pad = np.zeros((EXTRA_BODIES, 19, 2))
@@ -181,8 +181,8 @@ class PanopticDataset(data.Dataset):
 
       
 
-      EXTRA_BODIES = 3 - people
-      if EXTRA_BODIES == 3:
+      EXTRA_BODIES = 7 - people
+      if EXTRA_BODIES == 7:
          labels = np.zeros((EXTRA_BODIES, 19, 3))
       elif EXTRA_BODIES != 0:
          pad = np.zeros((EXTRA_BODIES, 19, 3))
@@ -200,8 +200,14 @@ class PanopticDataset(data.Dataset):
       for i in range(t1*t2):
          x = int(target[i][0])
          y = int(target[i][1])
-         if x < 384 and x >= 0 and y < 216 and y >= 0:
-            heatmap[y][x] = target[i][2]
+         r = 2
+         for dx in range(-r, r+1):
+            dy1 = (r-dx)*(-1)
+            dy2 = (r-dx) + 1
+            for dy in range(dy1, dy2):
+               de = abs(dx) + abs(dy)
+               if x+dx < 384 and x+dx >= 0 and y+dy < 216 and y+dy >= 0:
+                  heatmap[y+dy][x+dx] = target[i][2] - 0.5 * de
 
       heatmap = heatmap.reshape((1, 216, 384))
 

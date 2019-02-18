@@ -29,7 +29,8 @@ test_txt_path = './data/test.txt'
 data_dir = './data/panoptic'
 joint_dir = './data/2d_joints'
 
-BATCH_SIZE = 35
+BATCH_SIZE = 50
+chunk_sizes = [24, 26]
 LEARNING_RATE = 0.00001
 EPOCHS = 100
 RESUME_FROM_FILE = False
@@ -48,12 +49,12 @@ def main():
     t = [line.strip() for line in train_txt]
     #print(t)
     train_loader = torch.utils.data.DataLoader(PanopticDataset(data_dir, joint_dir, t), batch_size=BATCH_SIZE, shuffle=False)                                    
-    #print(len(train_loader))
+    print(len(train_loader))
     
     val_txt = open(val_txt_path, 'r')
     v = [line.strip() for line in val_txt]
     val_loader = torch.utils.data.DataLoader(PanopticDataset(data_dir, joint_dir, v), batch_size=BATCH_SIZE, shuffle=False) 
-    #print(len(val_loader))
+    print(len(val_loader))
 
     data_load_time.update(time.time()-end)
     print("Loading Data Time: {} sec".format(data_load_time.val))
@@ -68,7 +69,7 @@ def main():
     #### Initialize Model
     #model_no_parallel = Arc(BATCH_SIZE)
     model_no_parallel = Arc2(output_size=(216, 384), in_channels=3, pretrained=True)
-    model = DataParallel(model_no_parallel, chunk_sizes=[16,19])
+    model = DataParallel(model_no_parallel, chunk_sizes=chunk_sizes)
     model = model.cuda()
 
     #### Load Model from Checkpoint
@@ -143,7 +144,7 @@ def main():
                 writer.add_scalar('train_loss', train_loss/train_count, train_iter)
                 output_heatmap = output[0][0].data.squeeze().cpu().numpy().astype(np.float32)
                 output_heatmap /= np.max(output_heatmap)
-                plot.imsave('output/T{}.png'.format(train_count), output_heatmap, cmap="viridis")
+                plot.imsave('output/train/T{}.png'.format(train_count), output_heatmap, cmap="viridis")
             
             train_count += BATCH_SIZE
             train_iter += BATCH_SIZE
@@ -175,7 +176,7 @@ def main():
                     writer.add_scalar('val_loss', val_loss/val_count, val_iter)
                     output_heatmap = output[0][0].data.squeeze().cpu().numpy().astype(np.float32)
                     output_heatmap /= np.max(output_heatmap)
-                    plot.imsave('output/V{}.png'.format(val_count), output_heatmap, cmap="viridis")
+                    plot.imsave('output/val/V{}.png'.format(val_count), output_heatmap, cmap="viridis")
 
                 val_count += BATCH_SIZE
                 val_iter += BATCH_SIZE
@@ -195,11 +196,12 @@ def main():
 
         #### Save Checkpoint
         if val_loss/val_count < best_loss:
+            best_loss = val_loss/val_count
             torch.save({
                 'epoch': start_epoch + epoch + 1,
                 'state_dict': model.state_dict(),
                 'optimizer': optimizer.state_dict(),
-            }, 'checkpoint.pth.tar')
+            }, 'checkpoint2.pth.tar')
 
     print("Training End")
 

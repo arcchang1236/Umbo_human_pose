@@ -14,7 +14,7 @@ def generate_data(path, id):
         f1 = os.path.join(s1,img_dir)
         for s2 in id:
             f2 = os.path.join(f1, s2)
-            a = sorted(os.listdir(os.path.join(p, f2)))[1000:8000]
+            a = sorted(os.listdir(os.path.join(p, f2)))[1000:6000]
             for s3 in a:
                 final_s = os.path.join(f2, s3)+'\n'
                 txt.write(final_s)

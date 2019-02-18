@@ -137,6 +137,8 @@ class Arc2(nn.Module):
         super(Arc2, self).__init__()
         # ResNet
         pretrained_model = torchvision.models.__dict__['resnet50'](pretrained=pretrained)
+        for param in pretrained_model.parameters():
+            param.requires_grad = False
 
         if in_channels == 3:
             self.conv1 = pretrained_model._modules['conv1']

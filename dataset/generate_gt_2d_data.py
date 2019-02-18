@@ -1,25 +1,23 @@
 import os
 import json
 import numpy as np
-from utils.utils import projectPoints
 
 # Frame: 1000~8000
 idx = ['00_00', '00_05', '00_09', '00_14', '00_15', '00_23', '00_27']
 
-joint_dir = './data/panoptic'
-save_dir = './data/2d_joints/160224_haggling1'
-
+save_dir = '../data/2d_joints/'
 joint_prefix = 'hdPose3d_stage1_coco19/body3DScene_'
 img_dir = 'hdImgs'
 
 def generate_2d_joint(path):
     
     for s1 in os.listdir(path):
+        print(s1)
         f1 = os.path.join(s1,img_dir)
         for s2 in idx:
             f2 = os.path.join(f1, s2)
             #print(f2)
-            a = sorted(os.listdir(os.path.join(path, f2)))[1000:8000]
+            a = sorted(os.listdir(os.path.join(path, f2)))[1000:6000]
             #print(a[0])
             cnt = 0
             for s3 in a:
@@ -68,7 +66,8 @@ def generate_2d_joint(path):
                 
                 j2D_name = '{0}/{1}.txt'.format(s2, s3.split('.')[0])
                 #print(j2D_name)
-                j2D_fullname = os.path.join(save_dir, j2D_name)
+                save_dir_action = os.path.join(save_dir, s1)
+                j2D_fullname = os.path.join(save_dir_action, j2D_name)
                 j2D = open(j2D_fullname, 'w')
                 for s in labels:
                     #print(s.shape, '!!')
@@ -82,9 +81,33 @@ def generate_2d_joint(path):
                 cnt += 1
             
             print('Generates {} files'.format(cnt))
-                
+
+
+def projectPoints(X, K, R, t, Kd):
+    """ Projects points X (3xN) using camera intrinsics K (3x3),
+    extrinsics (R,t) and distortion parameters Kd=[k1,k2,p1,p2,k3].
+
+    Roughly, x = K*(R*X + t) + distortion
+
+    See http://docs.opencv.org/2.4/doc/tutorials/calib3d/camera_calibration/camera_calibration.html
+    or cv2.projectPoints
+    """
+
+    x = np.asarray(R*X + t)
+
+    x[0:2,:] = x[0:2,:]/x[2,:]
+
+    r = x[0,:]*x[0,:] + x[1,:]*x[1,:]
+
+    x[0,:] = x[0,:]*(1 + Kd[0]*r + Kd[1]*r*r + Kd[4]*r*r*r) + 2*Kd[2]*x[0,:]*x[1,:] + Kd[3]*(r + 2*x[0,:]*x[0,:])
+    x[1,:] = x[1,:]*(1 + Kd[0]*r + Kd[1]*r*r + Kd[4]*r*r*r) + 2*Kd[3]*x[0,:]*x[1,:] + Kd[2]*(r + 2*x[1,:]*x[1,:])
+
+    x[0,:] = K[0,0]*x[0,:] + K[0,1]*x[1,:] + K[0,2]
+    x[1,:] = K[1,0]*x[0,:] + K[1,1]*x[1,:] + K[1,2]
+
+    return x
 
 if __name__ == '__main__':
     print("Start generating 2d gt joints from gt 3d joints....")
-    generate_2d_joint(joint_dir)
+    generate_2d_joint('../data/panoptic')
     print("Generated Done!")
