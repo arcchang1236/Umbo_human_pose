@@ -29,8 +29,8 @@ test_txt_path = './data/test.txt'
 data_dir = './data/panoptic'
 joint_dir = './data/2d_joints'
 
-BATCH_SIZE = 50
-chunk_sizes = [24, 26]
+BATCH_SIZE = 25
+chunk_sizes = [25]
 LEARNING_RATE = 0.00001
 EPOCHS = 100
 RESUME_FROM_FILE = False

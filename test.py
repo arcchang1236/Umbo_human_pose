@@ -47,7 +47,7 @@ def main():
     model = DataParallel(model_no_parallel, chunk_sizes=[1])
     model = model.cuda()
 
-    resume_file = 'checkpoint.pth.tar'
+    resume_file = 'checkpoint2.pth.tar'
 
     if RESUME_FROM_FILE:
         if os.path.isfile(resume_file):
