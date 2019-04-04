@@ -78,7 +78,7 @@ def main(args):
         print('\nEpoch: %d | LR: %.8f' % (epoch + 1, lr)) 
 
         # train for one epoch
-        train_loss = train(train_loader, model, [criterion1, criterion2, criterion3], optimizer, epoch, writer)
+        train_loss = train(train_loader, model, model2, [criterion1, criterion2, criterion3], optimizer, epoch, writer)
         print('train_loss: ',train_loss)
         writer.add_scalar('train_loss_epoch', train_loss, epoch)
 
@@ -95,7 +95,7 @@ def main(args):
 
 
 
-def train(train_loader, model, criterions, optimizer, epoch, writer):
+def train(train_loader, model, model2, criterions, optimizer, epoch, writer):
     # prepare for refine loss
     def ohkm(loss, top_k):
         ohkm_loss = 0.
@@ -114,6 +114,7 @@ def train(train_loader, model, criterions, optimizer, epoch, writer):
 
     # switch to train mode
     model.train()
+    model2.train()
 
     #for i, (inputs, targets_2d, valid, meta) in enumerate(train_loader): 
     for i, (inputs, joints_plane, joints_world, targets_2d, targets_3d) in enumerate(train_loader): 
@@ -127,37 +128,16 @@ def train(train_loader, model, criterions, optimizer, epoch, writer):
         depth_target_var = torch.autograd.Variable(targets_3d.cuda(async=True))
         #valid_var = torch.autograd.Variable(valid.cuda(async=True))
 
-        #print(targets[0].shape, valid[0].shape, len(valid))
+        tgt_img = tgt_img.to(device)
+        ref_imgs = [img.to(device) for img in ref_imgs]
 
         # compute output
         global_outputs, refine_output, depth_output = model(input_var)
         score_map = refine_output.data.cpu()
 
-        loss = 0.
-        global_loss_record = 0.
-        refine_loss_record = 0.
-        depth_loss_record = 0.
-        # compute global loss and refine loss
-        for global_output, label in zip(global_outputs, targets_2d):
-            num_points = global_output.size()[1]
-            #global_label = label * (valid > 1.1).type(torch.FloatTensor).view(-1, num_points, 1, 1)
-            global_label = label
-            #print(global_output.size(), num_points, np.shape(global_label), np.shape(label))
-            global_loss = criterion1(global_output, torch.autograd.Variable(global_label.cuda(async=True))) / 2.0
-            loss += global_loss
-            global_loss_record += global_loss.data.item()
-        #print(refine_output.shape, refine_target_var.shape)
-        refine_loss = criterion2(refine_output, refine_target_var)
-        refine_loss = refine_loss.mean(dim=3).mean(dim=2)
-        #refine_loss *= (valid_var > 0.1).type(torch.cuda.FloatTensor)
-        refine_loss = ohkm(refine_loss, 8)
-        loss += refine_loss
-        refine_loss_record = refine_loss.data.item()
+        explainability_mask, pose = model2(tgt_img, ref_imgs)
 
-        # compute depth loss
-        depth_loss = criterion3(depth_output, depth_target_var)
-        loss += depth_loss
-        depth_loss_record = depth_loss.data.item()
+        loss = reconstructionLoss(tgt_img, ref_imgs, intrinsics, depth_output, explainability_mask, pose)
         
         # record loss
         losses.update(loss.data.item(), inputs.size(0))
@@ -167,7 +147,7 @@ def train(train_loader, model, criterions, optimizer, epoch, writer):
         loss.backward()
         optimizer.step()
 
-        if(i%400==0 and i!=0):
+        if(i%500==0 and i!=0):
             print('Epoch: {} [{}] | Ltotal: {:.8f}, Lg: {:.8f}, Lr: {:.8f}, Ld: {:.8f}, Lavg: {:.8f}'
                 .format(epoch, i, loss.data.item(), global_loss_record, 
                     refine_loss_record, depth_loss_record, losses.avg)) 
@@ -175,19 +155,70 @@ def train(train_loader, model, criterions, optimizer, epoch, writer):
 
             # Visualize
             TA = targets_3d[0][0].data.squeeze().cpu().numpy().astype(np.float32)
-            TB = targets_2d[0][0][0].data.squeeze().cpu().numpy().astype(np.float32)
+            TB = target7[0][0].data.squeeze().cpu().numpy().astype(np.float32)
             TA = np.transpose(TA)
             TB = np.transpose(TB)
-            plt.imsave('heatmap/gt/{}_{}.png'.format(epoch, i), TA, cmap="viridis")
-            plt.imsave('heatmap/gt/{}_{}.png'.format(epoch, i), TB, cmap="viridis")
-
-            TC = depth_output[0][0].data.squeeze().cpu().numpy().astype(np.float32)
+            plt.imsave('heatmap/gt/3D_{}_{}.png'.format(epoch, i), TA, cmap="viridis")
+            plt.imsave('heatmap/gt/2D_{}_{}.png'.format(epoch, i), TB, cmap="viridis")
+            
+            TC = refine_output[0][0].data.squeeze().cpu().numpy().astype(np.float32)
             TC = np.transpose(TC)
-            plt.imsave('heatmap/train/{}_{}.png'.format(epoch, i), TC, cmap="viridis")
+            plt.imsave('heatmap/2d/{}_{}.png'.format(epoch, i), TC, cmap="viridis")
+            TD = depth_output[0][0].data.squeeze().cpu().numpy().astype(np.float32)
+            TD = np.transpose(TD)
+            plt.imsave('heatmap/3d/{}_{}.png'.format(epoch, i), TD, cmap="viridis")
 
     return losses.avg
 
+def reconstructionLoss(tgt_img, ref_imgs, intrinsics, epth, explainability_mask, pose,
+                        rotation_mode='euler', padding_mode='zeros'):
+    def one_scale(depth, explainability_mask):
+        assert(explainability_mask is None or depth.size()[2:] == explainability_mask.size()[2:])
+        assert(pose.size(1) == len(ref_imgs))
 
+        reconstruction_loss = 0
+        b, _, h, w = depth.size()
+        downscale = tgt_img.size(2)/h
+
+        tgt_img_scaled = F.interpolate(tgt_img, (h, w), mode='area')
+        ref_imgs_scaled = [F.interpolate(ref_img, (h, w), mode='area') for ref_img in ref_imgs]
+        intrinsics_scaled = torch.cat((intrinsics[:, 0:2]/downscale, intrinsics[:, 2:]), dim=1)
+
+        warped_imgs = []
+        diff_maps = []
+
+        for i, ref_img in enumerate(ref_imgs_scaled):
+            current_pose = pose[:, i]
+
+            ref_img_warped, valid_points = inverse_warp(ref_img, depth[:,0], current_pose,
+                                                        intrinsics_scaled,
+                                                        rotation_mode, padding_mode)
+            diff = (tgt_img_scaled - ref_img_warped) * valid_points.unsqueeze(1).float()
+
+            if explainability_mask is not None:
+                diff = diff * explainability_mask[:,i:i+1].expand_as(diff)
+
+            reconstruction_loss += diff.abs().mean()
+            assert((reconstruction_loss == reconstruction_loss).item() == 1)
+
+            warped_imgs.append(ref_img_warped[0])
+            diff_maps.append(diff[0])
+
+        return reconstruction_loss, warped_imgs, diff_maps
+
+    warped_results, diff_results = [], []
+    if type(explainability_mask) not in [tuple, list]:
+        explainability_mask = [explainability_mask]
+    if type(depth) not in [list, tuple]:
+        depth = [depth]
+
+    total_loss = 0
+    for d, mask in zip(depth, explainability_mask):
+        loss, warped, diff = one_scale(d, mask)
+        total_loss += loss
+        warped_results.append(warped)
+        diff_results.append(diff)
+    return loss, warped_results, diff_results
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='PyTorch CPN Training')

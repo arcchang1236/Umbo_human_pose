@@ -163,7 +163,7 @@ def train(train_loader, model, criterions, optimizer, epoch, writer):
         loss.backward()
         optimizer.step()
 
-        if(i%400==0 and i!=0):
+        if(i%500==0 and i!=0):
             print('Epoch: {} [{}] | Ltotal: {:.8f}, Lg: {:.8f}, Lr: {:.8f}, Ld: {:.8f}, Lavg: {:.8f}'
                 .format(epoch, i, loss.data.item(), global_loss_record, 
                     refine_loss_record, depth_loss_record, losses.avg)) 
@@ -171,15 +171,18 @@ def train(train_loader, model, criterions, optimizer, epoch, writer):
 
             # Visualize
             TA = targets_3d[0][0].data.squeeze().cpu().numpy().astype(np.float32)
-            #TB = targets_2d[0][0][0].data.squeeze().cpu().numpy().astype(np.float32)
+            TB = target7[0][0].data.squeeze().cpu().numpy().astype(np.float32)
             TA = np.transpose(TA)
-            #TB = np.transpose(TB)
+            TB = np.transpose(TB)
             plt.imsave('heatmap/gt/3D_{}_{}.png'.format(epoch, i), TA, cmap="viridis")
-            #plt.imsave('heatmap/gt/2D_{}_{}.png'.format(epoch, i), TB, cmap="viridis")
+            plt.imsave('heatmap/gt/2D_{}_{}.png'.format(epoch, i), TB, cmap="viridis")
 
-            TC = depth_output[0][0].data.squeeze().cpu().numpy().astype(np.float32)
+            TC = refine_output[0][0].data.squeeze().cpu().numpy().astype(np.float32)
             TC = np.transpose(TC)
-            plt.imsave('heatmap/train/{}_{}.png'.format(epoch, i), TC, cmap="viridis")
+            plt.imsave('heatmap/2d/{}_{}.png'.format(epoch, i), TC, cmap="viridis")
+            TD = depth_output[0][0].data.squeeze().cpu().numpy().astype(np.float32)
+            TD = np.transpose(TD)
+            plt.imsave('heatmap/3d/{}_{}.png'.format(epoch, i), TD, cmap="viridis")
 
     return losses.avg
 
